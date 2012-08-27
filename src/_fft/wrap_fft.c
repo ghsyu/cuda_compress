@@ -13,7 +13,7 @@ PyObject *wrap_fft2d(PyObject *self, PyObject *args){
 	return NULL;
 	}
 	
-    if (PyArray_Size((PyObject *)src) != 2){
+    if (PyArray_NDIM((PyObject *)src) != 2){
         PyErr_Format(PyExc_ValueError, "src data must be 2 dimensional");
         return NULL;
     }
