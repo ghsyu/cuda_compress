@@ -42,6 +42,8 @@ class CudaExtension(Extension):
         else: self.cuda_extra_compile_args.append('-m32')
         self.cuda_extra_compile_args.append('-Xcompiler')
         self.cuda_extra_compile_args.append('-fPIC')
+        self.cuda_extra_compile_args.append('-g')
+        self.cuda_extra_compile_args.append('-G')
         
 class cuda_build_ext(build_ext):
     def build_extension(self, ext):

@@ -1,4 +1,5 @@
 #include <Python.h>
+#include <complex.h>
 #include "comfft.h"
 #include <cuda_runtime_api.h>
 #include "numpy/arrayobject.h"
@@ -21,7 +22,15 @@ PyObject *wrap_fft2d(PyObject *self, PyObject *args){
 		nx = PyArray_DIM(src, 0);
 		ny = PyArray_DIM(src, 1);
 	}
-	fft2d((float *)PyArray_DATA(src), (float *)PyArray_DATA(dst), nx, ny);
+	
+	if (! (PyArray_ISCOMPLEX((PyObject *) src))){
+        PyErr_Format(PyExc_ValueError, "All arrays must be complex");
+        return NULL;
+	}
+	
+	dst = (PyArrayObject *) PyArray_SimpleNew(2, PyArray_DIMS(src), NPY_CFLOAT);
+
+	fft2d((float complex *)PyArray_DATA(src), (float complex *)PyArray_DATA(dst), nx, ny);
 
 	return PyArray_Return(dst);
 	}
