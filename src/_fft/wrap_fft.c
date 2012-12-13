@@ -1,5 +1,5 @@
 #include <Python.h>
-#include <complex.h>
+#include <cufft.h>
 #include "comfft.h"
 #include <cuda_runtime_api.h>
 #include "numpy/arrayobject.h"
@@ -30,7 +30,7 @@ PyObject *wrap_fft2d(PyObject *self, PyObject *args){
 	
 	dst = (PyArrayObject *) PyArray_SimpleNew(2, PyArray_DIMS(src), NPY_CFLOAT);
 
-	fft2d((float complex *)PyArray_DATA(src), (float complex *)PyArray_DATA(dst), nx, ny);
+	fft2d((cufftComplex *)PyArray_DATA(src), (cufftComplex *)PyArray_DATA(dst), nx, ny);
 
 	return PyArray_Return(dst);
 	}

@@ -1,12 +1,11 @@
 #include<stdio.h>
 #include<stdlib.h>
-#include<complex.h>
 #include<cuda.h>
 #include<cuda_runtime_api.h>
 #include<cufft.h>
 #include"comfft.h"
 
-int fft2d(float complex *src_data, float complex *dst_data, int nx, int ny){
+int fft2d(cufftComplex *src_data, cufftComplex *dst_data, int nx, int ny){
     cufftHandle plan;    
     cufftComplex *dev_src, *dev_dst;
     //Allocate memory on the GPU and copy over the src array

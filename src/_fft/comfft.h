@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <cuda.h>
-#include <complex.h>
 #include <cuda_runtime_api.h>
 #include <cufft.h>
 
@@ -11,7 +10,7 @@
 extern "C" {
 #endif
 
-int fft2d(float complex *, float complex *, int, int);
+int fft2d(cufftComplex *, cufftComplex *, int, int);
 
 static void HandleError( cudaError_t err,
                          const char *file,
