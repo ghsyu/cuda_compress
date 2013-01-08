@@ -76,14 +76,12 @@ template<typename T> struct Clean {
         }
     }                
     __global__ void clean2dr (int *dim1_p, int *dim2_p, int *argmax1_p, int *argmax2_p, float *step_p, T *ker, T *res,
-                               int *nargmax1_p, int *nargmax2_p, T *max, T *mmax, int *pos_def, T *nscore){ 
+                               int *pos_def, T *nscore, T *val_arr){ 
         int dim1 = *dim1_p;
         int dim2 = *dim2_p;
         int argmax1 = *argmax1_p;
         int argmax2 = *argmax2_p;
         float step = *step_p;
-        int nargmax1 = *nargmax1_p;
-        int nargmax2 = *nargmax2_p;
         int gridx = (dim1 % BLOCKSIZEX == 0) ? dim1/BLOCKSIZEX : dim1/BLOCKSIZEX + 1;
         T max=0, mmax, val, mval;
         //Array for accumulating the nscores of the block
@@ -99,7 +97,7 @@ template<typename T> struct Clean {
         val = res[wrap_x + wrap_y*size_of(T)*dim1];
         mval = val * val;
         s_data[tid] = mval;
-        for (int s = blockDim.x/2; s>0, s>>=1){
+        for (int s = blockDim.x * blockDim.y/2; s>0, s>>=1){
             if (tid < s){
                 s_data[tid] += s_data[tid + s];
             }
@@ -107,12 +105,10 @@ template<typename T> struct Clean {
         __syncthreads();
         if (tid == 0){
             nscore[blockIdx.x + blockIdx.y*gridx] = s_data[0];
-        //XXX Race condition?
-        if (mval > mmax && (*pos_def == 0 || val > 0) && IND2(area,wrap_n1,wrap_n2,int)){
-            nargmax1 = wrap_n1; nargmax2 = wrap_n2;
-            max = val;
-            mmax = mval;
-        }
+        
+        __syncthreads();
+        //Now find the max val and mval within each block
+        val_arr[n1 + blockDim.x * n2] = val
     }
     
     //   ____ _                  ____     _      
@@ -129,10 +125,11 @@ template<typename T> struct Clean {
         T firstscore=-1;
         int argmax1=0, argmax2=0, nargmax1=0, nargmax2=0;
         int dim1=DIM(res,0), dim2=DIM(res,1), wrap_n1, wrap_n2;
+        T val_arr[dim1*dim2];
         int gridx, gridy, smemsize;
         T *best_mdl=NULL, *best_res=NULL;
         T *dev_ker, *dev_area, *dev_res, *dev_max, *dev_mmax, *dev_step, *dev_mq, *dev_nscore
-        int *dev_argmax1, *dev_argmax2, *dev_nargmax1, *dev_nargmax2,
+        int *dev_argmax1, *dev_argmax2,
             *dev_dim1, *dev_dim2
         if (!stop_if_div) {
             best_mdl = (T *)malloc(dim1*dim2*sizeof(T));
@@ -157,12 +154,11 @@ template<typename T> struct Clean {
         cudaMalloc((void**) &dev_argmax1,  sizeof(int));
         cudaMalloc((void**) &dev_argmax2,  sizeof(int));
         cudaMalloc((void**) &dev_step,     sizeof(T));
-        cudaMalloc((void**) &dev_nargmax1, sizeof(int));
-        cudaMalloc((void**) &dev_nargmax2, sizeof(int));
         cudaMalloc((void**) &dev_max,      sizeof(T));
         cudaMalloc((void**) &dev_mmax,     sizeof(T));
         cudaMalloc((void**) &dev_pos_def,  sizeof(int));
         cudaMalloc((void**) &dev_nscore,   sizeof(T)*(dim1*dim2/(BLOCKSIZEX * BLOCKSIZEY)+1));
+        cudaMalloc((void**) &dev_val_arr,  sizeof(T)*(dim1*dim2));
         
         cudaMemCpy(dev_ker,      PyArray_DATA(ker), PyArray_NBYTES(ker),    cudaMemcpyHostToDevice);
         cudaMemCpy(dev_res,      PyArray_DATA(res), PyArray_NBYTES(res),    cudaMemcpyHostToDevice);
@@ -171,11 +167,9 @@ template<typename T> struct Clean {
         cudaMemCpy(dev_argmax1,  &argmax1,          sizeof(int),            cudaMemcpyHostToDevice);
         cudaMemCpy(dev_argmax2,  &argmax2,          sizeof(int),            cudaMemcpyHostToDevice);
         cudaMemCpy(dev_step,     &step,             sizeof(T),              cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_nargmax1, &nargmax1,         sizeof(int),            cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_nargmax2, &nargmax2,         sizeof(int),            cudaMemcpyHostToDevice);
         cudaMemCpy(dev_max,      &max,              sizeof(T),              cudaMemcpyHostToDevice);
         cudaMemCpy(dev_pos_def,  &pos_def,          sizeof(int),            cudaMemcpyHostToDevice);
-        //Ceiling division of dim1/16 and dim2/16
+        //Ceiling division of dim1/BLOCKSIZEX and dim2/BLOCKSIZEY
         gridx = (dim1 % BLOCKSIZEX == 0) ? dim1/BLOCKSIZEX : dim1/BLOCKSIZEX + 1;
         gridy = (dim2 % BLOCKSIZEY == 0) ? dim2/BLOCKSIZEY : dim2/BLOCKSIZEY + 1;
         dim3 grid(gridx, gridy);
@@ -189,12 +183,25 @@ template<typename T> struct Clean {
             step = (T) gain * max * q;
             IND2(mdl,argmax1,argmax2,T) += step;
             // Take next step and compute score
-            //XXX
             clean2dr<<<grid, blocksize,>>>(dev_dim1, dev_dim2, dev_argmax1, dev_argmax2, dev_step, dev_ker,
-                                      dev_res, dev_nargmax1, dev_nargmax2, dev_max, dev_mmax, dev_pos_def, dev_nscore);
+                                      dev_res, dev_max, dev_mmax, dev_pos_def,
+                                      dev_nscore, dev_val_arr);
             
-            cudaMemCpy(&max,   dev_max,  sizeof(T), cudaMemcpyDeviceToHost);
-            
+            cudaMemCpy(&val_arr, dev_val_array, sizeof(T*dim1*dim2), cudaMemcpyDeviceToHost);
+            for (int n1=0; n1 < dim1; n1++) {
+                wrap_n1 = (n1 + argmax1) % dim1;
+                for (int n2=0; n2 < dim2; n2++) {
+                    wrap_n2 = (n2 + argmax2) % dim2;
+                    val = val_arr[n1 + dim1*n2];
+                    mval = val * val;
+                    nscore += mval;
+                    if (mval > mmax && (pos_def == 0 || val > 0) && IND2(area,wrap_n1,wrap_n2,int)) {
+                        nargmax1 = wrap_n1; nargmax2 = wrap_n2;
+                        max = val;
+                        mmax = mval;
+                    }
+                }
+            }
             nscore = sqrt(nscore / (dim1 * dim2));
             if (firstscore < 0) firstscore = nscore;
             if (verb != 0)
@@ -255,12 +262,11 @@ template<typename T> struct Clean {
         cudaFree(dev_argmax1);
         cudaFree(dev_argmax2);
         cudaFree(dev_step);
-        cudaFree(dev_nargmax1);
-        cudaFree(dev_nargmax2);
         cudaFree(dev_max);
         cudaFree(dev_mmax);
         cudaFree(pos_def);
         cudaFree(max_nscore);
+        cudaFree(dev_val_arr);
         return maxiter;
     }
 }
