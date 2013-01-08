@@ -84,7 +84,13 @@ template<typename T> struct Clean {
         float step = *step_p;
         int nargmax1 = *nargmax1_p;
         int nargmax2 = *nargmax2_p;
+        int gridx = (dim1 % BLOCKSIZEX == 0) ? dim1/BLOCKSIZEX : dim1/BLOCKSIZEX + 1;
         T max=0, mmax, val, mval;
+        //Array for accumulating the nscores of the block
+        //Initialized to 0 for the case that there are more array elements than image pixels
+        extern __shared__ T s_data[];
+        int tid = threadIdx.x + BLOCKSIZEX*threadIdx.y;
+        
         n1 = threadIdx.x + blockIdx.x * blockDim.x;
         n2 = threadIdx.y + blockIdx.y * blockDim.y;
         wrap_n1 = (n1 + argmax1) % dim1;
@@ -92,19 +98,7 @@ template<typename T> struct Clean {
         res[wrap_n1 + wrap_n2*size_of(T)*dim1] -= ker[n1 + n2*size_of(T)*dim1]*step;
         val = res[wrap_x + wrap_y*size_of(T)*dim1];
         mval = val * val;
-        nscore[n1　+　n2*size_of(T)*dim1] = mval;
-        if (mval > mmax && (*pos_def == 0 || val > 0) && IND2(area,wrap_n1,wrap_n2,int)){
-            nargmax1 = wrap_n1; nargmax2 = wrap_n2;
-            max = val;
-            mmax = mval;
-        }
-    }
-    __global__ void sum (T *g_idata, T *g_odata){
-        extern __shared__ T s_data[];
-        int tid = threadIdx.x;
-        int i = tid + 2*blockIdx.x;
-        s_data[tid] = g_idata[i+blockDim.x] + g_idata[i];
-        __syncthreads();
+        s_data[tid] = mval;
         for (int s = blockDim.x/2; s>0, s>>=1){
             if (tid < s){
                 s_data[tid] += s_data[tid + s];
@@ -112,7 +106,12 @@ template<typename T> struct Clean {
         }
         __syncthreads();
         if (tid == 0){
-            g_odata[blockIdx.x] = s_data[0];
+            nscore[blockIdx.x + blockIdx.y*gridx] = s_data[0];
+        //XXX Race condition?
+        if (mval > mmax && (*pos_def == 0 || val > 0) && IND2(area,wrap_n1,wrap_n2,int)){
+            nargmax1 = wrap_n1; nargmax2 = wrap_n2;
+            max = val;
+            mmax = mval;
         }
     }
     
@@ -130,7 +129,7 @@ template<typename T> struct Clean {
         T firstscore=-1;
         int argmax1=0, argmax2=0, nargmax1=0, nargmax2=0;
         int dim1=DIM(res,0), dim2=DIM(res,1), wrap_n1, wrap_n2;
-        int gridx, gridy;
+        int gridx, gridy, smemsize;
         T *best_mdl=NULL, *best_res=NULL;
         T *dev_ker, *dev_area, *dev_res, *dev_max, *dev_mmax, *dev_step, *dev_mq, *dev_nscore
         int *dev_argmax1, *dev_argmax2, *dev_nargmax1, *dev_nargmax2,
@@ -181,6 +180,7 @@ template<typename T> struct Clean {
         gridy = (dim2 % BLOCKSIZEY == 0) ? dim2/BLOCKSIZEY : dim2/BLOCKSIZEY + 1;
         dim3 grid(gridx, gridy);
         dim3 blocksize(BLOCKSIZEX, BLOCKSIZEY);
+        smemsize = BLOCKSIZEX * BLOCKSIZEY;
         // The clean loop
         for (int i=0; i < maxiter; i++) {
             nscore = 0;
@@ -190,7 +190,7 @@ template<typename T> struct Clean {
             IND2(mdl,argmax1,argmax2,T) += step;
             // Take next step and compute score
             //XXX
-            clean2dr<<<grid, blocksize>>>(dev_dim1, dev_dim2, dev_argmax1, dev_argmax2, dev_step, dev_ker,
+            clean2dr<<<grid, blocksize,>>>(dev_dim1, dev_dim2, dev_argmax1, dev_argmax2, dev_step, dev_ker,
                                       dev_res, dev_nargmax1, dev_nargmax2, dev_max, dev_mmax, dev_pos_def, dev_nscore);
             
             cudaMemCpy(&max,   dev_max,  sizeof(T), cudaMemcpyDeviceToHost);
