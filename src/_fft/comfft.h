@@ -53,4 +53,4 @@ static void __cudaCheckError( const char *file, const int line )
 }
 #endif
 
-#endif /* _TEST_CUDA_H_ */
+#endif /* _FFT_H_ */

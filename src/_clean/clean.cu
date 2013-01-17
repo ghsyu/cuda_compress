@@ -6,7 +6,7 @@
  * Author: Aaron Parsons, Gilbert Hsyu
  */
 
-
+#include <clean.h>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <Python.h>
@@ -57,9 +57,11 @@ template<typename T> struct Clean {
     // | |  _| |_) | | | |
     // | |_| |  __/| |_| |
     //  \____|_|    \___/ 
-    __global__ void ker_gain(q_out, mq_out, T *ker, int kerd1, T *area){
+    __global__ int ker_gain(T *q_out_p, T *mq_out_p, T *ker, int kerd1, T *area){
         extern __shared__ float mq = 0;
         extern __shared__ float q = 0;
+        T q_out = *q_out_p;
+        T mq_out = *mq_out_p;
         n1 = threadIdx.x;
         n2 = threadIdx.y;
         val = ker[n1 + n2*kerd1];
@@ -73,9 +75,10 @@ template<typename T> struct Clean {
         if threadIdx.x = 0;{
             mq_out = mq;
             q_out = q
+        return 0;
         }
     }                
-    __global__ void clean2dr (int *dim1_p, int *dim2_p, int *argmax1_p, int *argmax2_p, float *step_p, T *ker, T *res,
+    __global__ int clean2dr (int *dim1_p, int *dim2_p, int *argmax1_p, int *argmax2_p, float *step_p, T *ker, T *res,
                                int *pos_def, T *nscore, T *val_arr){ 
         int dim1 = *dim1_p;
         int dim2 = *dim2_p;
@@ -109,6 +112,8 @@ template<typename T> struct Clean {
         __syncthreads();
         //Now find the max val and mval within each block
         val_arr[n1 + blockDim.x * n2] = val
+        return 0;
+        }
     }
     
     //   ____ _                  ____     _      
@@ -147,28 +152,28 @@ template<typename T> struct Clean {
             }
         }
         q = 1/q;
-        cudaMalloc((void**) &dev_ker,      PyArray_NBYTES(ker));
-        cudaMalloc((void**) &dev_res,      PyArray_NBYTES(res));
-        cudaMalloc((void**) &dev_dim1,     sizeof(int));
-        cudaMalloc((void**) &dev_dim2,     sizeof(int));
-        cudaMalloc((void**) &dev_argmax1,  sizeof(int));
-        cudaMalloc((void**) &dev_argmax2,  sizeof(int));
-        cudaMalloc((void**) &dev_step,     sizeof(T));
-        cudaMalloc((void**) &dev_max,      sizeof(T));
-        cudaMalloc((void**) &dev_mmax,     sizeof(T));
-        cudaMalloc((void**) &dev_pos_def,  sizeof(int));
-        cudaMalloc((void**) &dev_nscore,   sizeof(T)*(dim1*dim2/(BLOCKSIZEX * BLOCKSIZEY)+1));
-        cudaMalloc((void**) &dev_val_arr,  sizeof(T)*(dim1*dim2));
+        CudaSafeCall(cudaMalloc((void**) &dev_ker,      PyArray_NBYTES(ker)));
+        CudaSafeCall(cudaMalloc((void**) &dev_res,      PyArray_NBYTES(res)));
+        CudaSafeCall(cudaMalloc((void**) &dev_dim1,     sizeof(int)));
+        CudaSafeCall(cudaMalloc((void**) &dev_dim2,     sizeof(int)));
+        CudaSafeCall(cudaMalloc((void**) &dev_argmax1,  sizeof(int)));
+        CudaSafeCall(cudaMalloc((void**) &dev_argmax2,  sizeof(int)));
+        CudaSafeCall(cudaMalloc((void**) &dev_step,     sizeof(T)));
+        CudaSafeCall(cudaMalloc((void**) &dev_max,      sizeof(T)));
+        CudaSafeCall(cudaMalloc((void**) &dev_mmax,     sizeof(T)));
+        CudaSafeCall(cudaMalloc((void**) &dev_pos_def,  sizeof(int)));
+        CudaSafeCall(cudaMalloc((void**) &dev_nscore,   sizeof(T)*(dim1*dim2/(BLOCKSIZEX * BLOCKSIZEY)+1)));
+        CudaSafeCall(cudaMalloc((void**) &dev_val_arr,  sizeof(T)*(dim1*dim2)));
         
-        cudaMemCpy(dev_ker,      PyArray_DATA(ker), PyArray_NBYTES(ker),    cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_res,      PyArray_DATA(res), PyArray_NBYTES(res),    cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_dim1,     &dim1,             sizeof(int),            cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_dim2,     &dim2,             sizeof(int),            cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_argmax1,  &argmax1,          sizeof(int),            cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_argmax2,  &argmax2,          sizeof(int),            cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_step,     &step,             sizeof(T),              cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_max,      &max,              sizeof(T),              cudaMemcpyHostToDevice);
-        cudaMemCpy(dev_pos_def,  &pos_def,          sizeof(int),            cudaMemcpyHostToDevice);
+        CudaSafeCall(cudaMemCpy(dev_ker,      PyArray_DATA(ker), PyArray_NBYTES(ker),    cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_res,      PyArray_DATA(res), PyArray_NBYTES(res),    cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_dim1,     &dim1,             sizeof(int),            cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_dim2,     &dim2,             sizeof(int),            cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_argmax1,  &argmax1,          sizeof(int),            cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_argmax2,  &argmax2,          sizeof(int),            cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_step,     &step,             sizeof(T),              cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_max,      &max,              sizeof(T),              cudaMemcpyHostToDevice));
+        CudaSafeCall(cudaMemCpy(dev_pos_def,  &pos_def,          sizeof(int),            cudaMemcpyHostToDevice));
         //Ceiling division of dim1/BLOCKSIZEX and dim2/BLOCKSIZEY
         gridx = (dim1 % BLOCKSIZEX == 0) ? dim1/BLOCKSIZEX : dim1/BLOCKSIZEX + 1;
         gridy = (dim2 % BLOCKSIZEY == 0) ? dim2/BLOCKSIZEY : dim2/BLOCKSIZEY + 1;
@@ -179,15 +184,15 @@ template<typename T> struct Clean {
         for (int i=0; i < maxiter; i++) {
             nscore = 0;
             mmax = -1;
-            cudaMemCpy(dev_mmax, &mmax, sizeof(T), cudaMemcpyHostToDevice);
+            CudaSafeCall(cudaMemCpy(dev_mmax, &mmax, sizeof(T), cudaMemcpyHostToDevice));
             step = (T) gain * max * q;
             IND2(mdl,argmax1,argmax2,T) += step;
             // Take next step and compute score
             clean2dr<<<grid, blocksize,>>>(dev_dim1, dev_dim2, dev_argmax1, dev_argmax2, dev_step, dev_ker,
                                       dev_res, dev_max, dev_mmax, dev_pos_def,
                                       dev_nscore, dev_val_arr);
-            
-            cudaMemCpy(&val_arr, dev_val_array, sizeof(T*dim1*dim2), cudaMemcpyDeviceToHost);
+            CudaCheckError();
+            CudaSafeCall(cudaMemCpy(&val_arr, dev_val_array, sizeof(T*dim1*dim2), cudaMemcpyDeviceToHost));
             for (int n1=0; n1 < dim1; n1++) {
                 wrap_n1 = (n1 + argmax1) % dim1;
                 for (int n2=0; n2 < dim2; n2++) {
@@ -269,4 +274,3 @@ template<typename T> struct Clean {
         cudaFree(dev_val_arr);
         return maxiter;
     }
-}
