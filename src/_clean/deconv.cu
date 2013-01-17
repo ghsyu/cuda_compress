@@ -6,7 +6,7 @@
  * Author: Aaron Parsons, Gilbert Hsyu
  */
 
-#include <clean.h>
+#include <deconv.h>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <Python.h>
