@@ -109,7 +109,6 @@ template<typename T> struct Clean {
         gridy = (dim2 % BLOCKSIZEY == 0) ? dim2/BLOCKSIZEY : dim2/BLOCKSIZEY + 1;
         dim3 grid(gridx, gridy);
         dim3 blocksize(BLOCKSIZEX, BLOCKSIZEY);
-        smemsize = BLOCKSIZEX * BLOCKSIZEY;
         // The clean loop
         for (int i=0; i < maxiter; i++) {
             nscore = 0;
@@ -117,7 +116,7 @@ template<typename T> struct Clean {
             step = (T) gain * max * q;
             IND2(mdl,argmax1,argmax2,T) += step;
             // Take next step and compute score
-            clean2drGPU<<<grid, blocksize, smemsize>>>(dev_dim1, dev_dim2, dev_argmax1, dev_argmax2, dev_step, dev_ker,
+            clean2drGPU<<<grid, blocksize>>>(dev_dim1, dev_dim2, dev_argmax1, dev_argmax2, dev_step, dev_ker,
                                       dev_res, dev_pos_def,
                                       dev_nscore, dev_val_arr);
             CudaCheckError();
