@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
-#include "sharedmem.cuh"
 
 
 
@@ -22,29 +21,14 @@ template<typename T>
         int argmax2 = *argmax2_p;
         float step = *step_p;
         int gridx = (dim1 % BLOCKSIZEX == 0) ? dim1/BLOCKSIZEX : dim1/BLOCKSIZEX + 1;
-        T val, mval;
-        //Array for accumulating the nscores of the block
-		SharedMemory<T> shared;
-		T* s_data = shared.getPointer();
-        int tid = threadIdx.x + BLOCKSIZEX*threadIdx.y;
+        T val;
         int n1 = threadIdx.x + blockIdx.x * blockDim.x;
         int n2 = threadIdx.y + blockIdx.y * blockDim.y;
         int wrap_n1 = (n1 + argmax1) % dim1;
         int wrap_n2 = (n2 + argmax2) % dim2;
         res[wrap_n1 + wrap_n2*sizeof(T)*dim1] -= ker[n1 + n2*sizeof(T)*dim1]*step;
         val = res[wrap_n1 + wrap_n2*sizeof(T)*dim1];
-        mval = val * val;
-        s_data[tid] = mval;
-        for (int s = blockDim.x * blockDim.y/2; s>0; s>>=1){
-            if (tid < s){
-                s_data[tid] += s_data[tid + s];
-            }
-        }
-        __syncthreads();
-        if (tid == 0){
-            nscore[blockIdx.x + blockIdx.y*gridx] = s_data[0];
-        __syncthreads();
-        val_arr[n1 + blockDim.x * n2] = val;
+        val_arr[n1 + blockDim.x*gridx*n2] = val;
         }
 		return;
     }
