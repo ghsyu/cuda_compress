@@ -56,7 +56,7 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
     
     val_arr = (float *) malloc(2*dim1*dim2*sizeof(float));
     if (val_arr == NULL){
-        exit (1);
+        exit (EXIT_FAILURE);
     }
     if (!stop_if_div) {
         best_mdl = (float *)malloc(2*dim1*dim2*sizeof(float));
@@ -86,42 +86,22 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
         CIND2I(mdl,argmax1,argmax2,float) += stepi;
         // Take next step and compute score
         val_arr = clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), \
-                    (float *)PyArray_DATA(mdl), (float *)PyArray_DATA(area), \
-                    gain, maxiter, argmax1, argmax2, stop_if_div, pos_def, \
+                    gain, maxiter, argmax1, argmax2, stop_if_div, \
                     &stepr, &stepi, PyArray_NBYTES(ker), PyArray_NBYTES(res), dim1, dim2, val_arr);
-        for (int i = 0, j; i < 2*dim1*dim2; i += 2){
-            j = i + 1;
-            valr = val_arr[i];
-            vali = val_arr[j];
+        for (int j = 0, k; j < 2*dim1*dim2; j += 2){
+            k = j + 1;
+            valr = val_arr[j];
+            vali = val_arr[k];
             mval = valr * valr + vali * vali;
             nscore += mval;
-            wrap_n1 = (i + argmax1) % dim1;
-            wrap_n2 = (i/dim1 + argmax2);
+            wrap_n1 = (j/2 + argmax1) % dim1;
+            wrap_n2 = (j/dim1/2 + argmax2) % dim2;
             if (mval > mmax && IND2(area,wrap_n1,wrap_n2,int)) {
                 nargmax1 = wrap_n1; nargmax2 = wrap_n2;
                 maxr = valr; maxi = vali;
                 mmax = mval;
             }
         }
-        /*for (int n1=0; n1 < dim1; n1++) {
-            wrap_n1 = (n1 + argmax1) % dim1;
-            for (int n2=0; n2 < dim2; n2++) {
-                wrap_n2 = (n2 + argmax2) % dim2;
-                CIND2R(res,wrap_n1,wrap_n2,float) -= \
-                  CIND2R(ker,n1,n2,float)*stepr - CIND2I(ker,n1,n2,float)*stepi;
-                CIND2I(res,wrap_n1,wrap_n2,float) -= \
-                  CIND2R(ker,n1,n2,float)*stepi + CIND2I(ker,n1,n2,float)*stepr;
-                valr = CIND2R(res,wrap_n1,wrap_n2,float);
-                vali = CIND2I(res,wrap_n1,wrap_n2,float);
-                mval = valr * valr + vali * vali;
-                nscore += mval;
-                if (mval > mmax && IND2(area,wrap_n1,wrap_n2,int)) {
-                    nargmax1 = wrap_n1; nargmax2 = wrap_n2;
-                    maxr = valr; maxi = vali;
-                    mmax = mval;
-                }
-            }
-        }*/
         nscore = sqrt(nscore / (dim1 * dim2));
         if (firstscore < 0) firstscore = nscore;
         if (verb != 0)
@@ -217,6 +197,10 @@ PyObject *clean(PyObject *self, PyObject *args, PyObject *kwargs) {
     }
     if (TYPE(res) != TYPE(ker) || TYPE(res) != TYPE(mdl)) {
         PyErr_Format(PyExc_ValueError, "array types must match");
+        return NULL;
+    }
+    if (!(PyArray_ISCARRAY(res) && PyArray_ISONESEGMENT(res))) {
+        PyErr_Format(PyExc_ValueError, "array must be aligned and one segment");
         return NULL;
     }
     if (TYPE(area) != NPY_LONG) {
