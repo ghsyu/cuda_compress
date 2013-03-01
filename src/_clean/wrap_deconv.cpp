@@ -85,23 +85,10 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
         CIND2R(mdl,argmax1,argmax2,float) += stepr;
         CIND2I(mdl,argmax1,argmax2,float) += stepi;
         // Take next step and compute score
-        val_arr = clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), \
-                    gain, maxiter, argmax1, argmax2, stop_if_div, \
-                    &stepr, &stepi, PyArray_NBYTES(ker), PyArray_NBYTES(res), dim1, dim2, val_arr);
-        for (int j = 0, k; j < 2*dim1*dim2; j += 2){
-            k = j + 1;
-            valr = val_arr[j];
-            vali = val_arr[k];
-            mval = valr * valr + vali * vali;
-            nscore += mval;
-            wrap_n1 = (j/2 + argmax1) % dim1;
-            wrap_n2 = (j/dim1/2 + argmax2) % dim2;
-            if (mval > mmax && IND2(area,wrap_n1,wrap_n2,int)) {
-                nargmax1 = wrap_n1; nargmax2 = wrap_n2;
-                maxr = valr; maxi = vali;
-                mmax = mval;
-            }
-        }
+        clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), \
+                    gain, maxiter, stop_if_div, &stepr, &stepi, \
+                    PyArray_NBYTES(ker), PyArray_NBYTES(res), dim1, dim2, \
+                    &nscore, &maxr, &maxi, &argmax1, &argmax2);
         nscore = sqrt(nscore / (dim1 * dim2));
         if (firstscore < 0) firstscore = nscore;
         if (verb != 0)
@@ -221,13 +208,13 @@ PyObject *clean(PyObject *self, PyObject *args, PyObject *kwargs) {
 }
 
 // Wrap function into module
-static PyMethodDef DeconvMethods[] = {
+static PyMethodDef DeconvGPUMethods[] = {
     {"clean", (PyCFunction)clean, METH_VARARGS|METH_KEYWORDS,
         "clean(res,ker,mdl,gain=.1,maxiter=200,tol=.001,stop_if_div=0,verbose=0,pos_def=0)\nPerform a 1 or 2 dimensional deconvolution using the CLEAN algorithm.."},
     {NULL, NULL}
 };
 
-PyMODINIT_FUNC init_deconv(void) {
-    (void) Py_InitModule("_deconv", DeconvMethods);
+PyMODINIT_FUNC init_deconvGPU(void) {
+    (void) Py_InitModule("_deconvGPU", DeconvGPUMethods);
     import_array();
 };
