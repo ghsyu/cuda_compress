@@ -85,10 +85,14 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
         CIND2R(mdl,argmax1,argmax2,float) += stepr;
         CIND2I(mdl,argmax1,argmax2,float) += stepi;
         // Take next step and compute score
-        clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), \
-                    gain, maxiter, stop_if_div, &stepr, &stepi, \
-                    PyArray_NBYTES(ker), PyArray_NBYTES(res), dim1, dim2, \
-                    &nscore, &maxr, &maxi, &argmax1, &argmax2);
+        clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), (int64_t *) PyArray_DATA(area), \
+                    gain, maxiter, stop_if_div, stepr, stepi, argmax1, argmax2, \
+                    PyArray_NBYTES(ker), PyArray_NBYTES(res), PyArray_NBYTES(area), dim1, dim2, \
+                    &nscore, &maxr, &maxi, &nargmax1, &nargmax2);
+        for (int j = 0; j < 128; j+=2){
+            printf("%0.1f ", res[j]);
+            if  (j+2 % 16 ==0) printf("\n");
+        }
         nscore = sqrt(nscore / (dim1 * dim2));
         if (firstscore < 0) firstscore = nscore;
         if (verb != 0)

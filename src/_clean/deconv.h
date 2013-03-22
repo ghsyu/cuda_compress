@@ -9,8 +9,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 
-float *clean_2d_c_GPU(float *, float *, double, int, int, \
-					  float *, float *, int, int, int, int, \
+float *clean_2d_c_GPU(float *, float *, int64_t *, double, int, int, \
+					  float, float, int, int, int, int, int, int, int, \
 					  float *, float *, float *, int *, int *);
 
 static void HandleError( cudaError_t err,
