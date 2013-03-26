@@ -52,12 +52,8 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
     int argmax1=0, argmax2=0, nargmax1=0, nargmax2=0;
     int dim1=DIM(res,0), dim2=DIM(res,1), wrap_n1, wrap_n2;
     float *best_mdl=NULL, *best_res=NULL;
-    float *val_arr;
-    
-    val_arr = (float *) malloc(2*dim1*dim2*sizeof(float));
-    if (val_arr == NULL){
-        exit (EXIT_FAILURE);
-    }
+    float *dev_ker, *dev_res, *g_nscore_i, *g_max_i, *g_nscore_o, *g_max_o;
+    int *dev_area, *g_max_idx_i, *g_max_idx_o;
     if (!stop_if_div) {
         best_mdl = (float *)malloc(2*dim1*dim2*sizeof(float));
         best_res = (float *)malloc(2*dim1*dim2*sizeof(float));
@@ -76,7 +72,11 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
     }
     qr /= mq;
     qi = -qi / mq;
-    
+    //Malloc arrays on GPU
+    gpu_set_up(dev_ker, dev_res, dev_area,       \
+               g_nscore_i, g_max_i, g_max_idx_i, \
+               g_nscore_o, g_max_o, g_max_idx_o, \
+               ker, res, area, dim1, dim2, PyArray_NBYTES(ker));
     for (int i=0; i < maxiter; i++) {
         nscore = 0;
         mmax = -1;
@@ -85,14 +85,12 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
         CIND2R(mdl,argmax1,argmax2,float) += stepr;
         CIND2I(mdl,argmax1,argmax2,float) += stepi;
         // Take next step and compute score
-        clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), (int64_t *) PyArray_DATA(area), \
+        clean_2d_c_GPU((float *)PyArray_DATA(res), (float *)PyArray_DATA(ker), PyArray_DATA(area), \
                     gain, maxiter, stop_if_div, stepr, stepi, argmax1, argmax2, \
                     PyArray_NBYTES(ker), PyArray_NBYTES(res), PyArray_NBYTES(area), dim1, dim2, \
-                    &nscore, &maxr, &maxi, &nargmax1, &nargmax2);
-        for (int j = 0; j < 128; j+=2){
-            printf("%0.1f ", res[j]);
-            if  (j+2 % 16 ==0) printf("\n");
-        }
+                    &nscore, &maxr, &maxi, &nargmax1, &nargmax2, \
+                    dev_ker, dev_res, dev_area, \
+                    g_nscore_i, g_max_i, g_max_idx_i, g_nscore_o, g_max_o, g_max_idx_o);
         nscore = sqrt(nscore / (dim1 * dim2));
         if (firstscore < 0) firstscore = nscore;
         if (verb != 0)
@@ -152,7 +150,8 @@ static int clean_2d_c(PyArrayObject *res, PyArrayObject *ker,
         }
     }
     if (best_mdl != NULL) { free(best_mdl); free(best_res); }
-    free(val_arr);
+    //Free GPU arrays
+    int gpu_free(dev_ker, dev_res, dev_area, g_nscore_i, g_max_i, g_max_idx_i, g_nscore_o, g_max_o, g_max_idx_o);
     return maxiter;
 }
 // __        __                               

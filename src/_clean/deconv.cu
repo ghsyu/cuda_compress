@@ -38,19 +38,15 @@ __global__ void sum_max(unsigned int n, int * area, float *g_nscore_i, float *g_
             s_nscore[tid] += s_nscore[tid + s];
             if ((s_max[2*tid]*s_max[2*tid] + s_max[2*tid+1]*s_max[2*tid+1]) < \
                 (s_max[2*(tid+s)]*s_max[2*(tid+s)] + s_max[2*(tid+s)+1]*s_max[2*(tid+s)+1])){
-                printf("Before: %f (%d, %d), %f (%d, %d)\n", s_max[2*tid], s_max_idx[2*tid], s_max_idx[2*tid+1], s_max[2*(tid+s)], s_max_idx[2*(tid+s)], s_max_idx[2*(tid+s)+1]);
                 s_max[2*tid]         = s_max[2*(tid+s)];
                 s_max[2*tid+1]       = s_max[2*(tid+s)+1];
                 s_max_idx[2*tid]     = s_max_idx[2*(tid+s)];
                 s_max_idx[2*tid+1]   = s_max_idx[2*(tid+s)+1];
-                printf("After: %f (%d, %d)\n", s_max[2*tid], s_max_idx[2*tid], s_max_idx[2*tid+1]);
             }
         }
         __syncthreads();
     }
     if (tid == 0){
-        printf("smax: %f ", s_max[0]);
-        printf("s_max_idx: (%d, %d)\n", s_max_idx[0], s_max_idx[1]);
         g_nscore_o[blockIdx.x]        = s_nscore[0];
         g_max_o[2*blockIdx.x]         = s_max[0];
         g_max_o[2*blockIdx.x+1]       = s_max[1];
@@ -69,25 +65,54 @@ __global__ void clean2dc(unsigned int dim1, unsigned int dim2, unsigned int argm
     if ((n1 < dim1) && (n2 < dim2)){
         int wrap_n1 = (n1 + argmax1) % dim1;
         int wrap_n2 = (n2 + argmax2) % dim2;
-        if (ker[2*i] == 1){
-            printf("argmax: (%d, %d), idx: %d, stepr: %f, res: %f,\n", argmax1, argmax2, wrap_n1+wrap_n2*dim1, stepr, res[2*(wrap_n1+wrap_n2*dim1)]);
-        }
         res[2*(wrap_n1 + wrap_n2*dim1)]     -= (ker[2*(i)] * stepr - ker[2*(i)+1] * stepi);
         res[2*(wrap_n1 + wrap_n2*dim1) + 1] -= (ker[2*(i)] * stepi + ker[2*(i)+1] * stepr);
         
-        if (ker[2*i] == 1){
-            printf("res: %f\n", res[2*(wrap_n1+wrap_n2*dim1)]);
-        }
         valr = res[2*(wrap_n1 + wrap_n2*dim1)];
         vali = res[2*(wrap_n1 + wrap_n2*dim1) + 1];
         g_nscore[i] = valr*valr+vali*vali;
         g_max[2*i] = valr;
         g_max[2*i+1] = vali;
-        g_max_idx[2*i] = n1;
-        g_max_idx[2*i+1] = n2;
+        g_max_idx[2*i] = wrap_n1;
+        g_max_idx[2*i+1] = wrap_n2;
     }
     return;
 }
+//Helper functions
+
+int gpu_set_up(float *dev_ker, float *dev_res, int *dev_area, \
+               float *g_nscore_i, float *g_max_i, int *g_max_idx_i, \
+               float *g_nscore_o, float *g_max_o, int *g_max_idx_o, \
+               float *ker, float *res, int *area, int dim1, int dim2, int ker_len){
+    CudaSafeCall(cudaMalloc((void**) &dev_ker,      ker_len));
+    CudaSafeCall(cudaMalloc((void**) &dev_res,      ker_len));
+    CudaSafeCall(cudaMalloc((void**) &dev_area,     ker_len));
+    CudaSafeCall(cudaMalloc((void**) &g_nscore_i,   sizeof(float)*dim1*dim2));
+    CudaSafeCall(cudaMalloc((void**) &g_max_i,      2*sizeof(float)*dim1*dim2));
+    CudaSafeCall(cudaMalloc((void**) &g_max_idx_i,  2*sizeof(int)*dim1*dim2));
+    CudaSafeCall(cudaMalloc((void**) &g_nscore_o,   sizeof(float)*dim1*dim2));
+    CudaSafeCall(cudaMalloc((void**) &g_max_o,      2*sizeof(float)*dim1*dim2));
+    CudaSafeCall(cudaMalloc((void**) &g_max_idx_o,  2*sizeof(int)*dim1*dim2));    
+    CudaSafeCall(cudaMemcpy(dev_ker,      ker,      ker_len,       cudaMemcpyHostToDevice));
+    CudaSafeCall(cudaMemcpy(dev_res,      res,      ker_len,       cudaMemcpyHostToDevice));
+    CudaSafeCall(cudaMemcpy(dev_area,     area,     ker_len,       cudaMemcpyHostToDevice));
+    return 0;
+}
+
+int gpu_free(float *dev_ker, float *dev_res, int *dev_area, \
+             float *g_nscore_i, float *g_max_i, int *g_max_idx_i, \
+             float *g_nscore_o, float *g_max_o, int *g_max_idx_o){
+    cudaFree(dev_ker);
+    cudaFree(dev_res);
+    cudaFree(g_nscore_i);
+    cudaFree(g_max_i);
+    cudaFree(g_max_idx_i);
+    cudaFree(g_nscore_o);
+    cudaFree(g_max_o);
+    cudaFree(g_max_idx_o);
+    return 0;
+}
+
 
 //   ____ _                  ____     _      
 //  / ___| | ___  __ _ _ __ |___ \ __| | ___ 
@@ -95,15 +120,16 @@ __global__ void clean2dc(unsigned int dim1, unsigned int dim2, unsigned int argm
 // | |___| |  __/ (_| | | | |/ __/ (_| | (__ 
 //  \____|_|\___|\__,_|_| |_|_____\__,_|\___|  
 // Does a 2d complex-valued clean
-float *clean_2d_c_GPU(float *res, float *ker, int64_t * area, \
+float *clean_2d_c_GPU(float *res, float *ker, int * area, \
         double gain, int maxiter, \
         int stop_if_div, \
         float stepr, float stepi, int argmax1, int argmax2, \
         int ker_len, int res_len, int area_len, int dim1, int dim2,
-        float *nscore_p, float *maxr_p, float *maxi_p, int *nargmax1_p, int *nargmax2_p) {
+        float *nscore_p, float *maxr_p, float *maxi_p, int *nargmax1_p, int *nargmax2_p, \
+        float *dev_ker, float *dev_res, int *dev_area, \
+        float *g_nscore_i, float *g_max_i, int *g_max_idx_i, \
+        float *g_nscore_o, float *g_max_o, int *g_max_idx_o) {
     int gridx, gridy;
-    float *dev_ker, *dev_res, *g_nscore_i, *g_max_i, *g_nscore_o, *g_max_o;
-    int *dev_area, *g_max_idx_i, *g_max_idx_o;
     float max_p[2];
     int max_idx_p[2];
     int gridsize;
@@ -112,18 +138,6 @@ float *clean_2d_c_GPU(float *res, float *ker, int64_t * area, \
     gridy = (dim2 % BLOCKSIZEY == 0) ? dim2/BLOCKSIZEY : dim2/BLOCKSIZEY + 1;
     dim3 grid(gridx, gridy);
     dim3 blocksize(BLOCKSIZEX, BLOCKSIZEY);
-    CudaSafeCall(cudaMalloc((void**) &dev_ker,      ker_len));
-    CudaSafeCall(cudaMalloc((void**) &dev_res,      res_len));
-    CudaSafeCall(cudaMalloc((void**) &dev_area,     area_len));
-    CudaSafeCall(cudaMalloc((void**) &g_nscore_i,   sizeof(float)*dim1*dim2));
-    CudaSafeCall(cudaMalloc((void**) &g_max_i,      2*sizeof(float)*dim1*dim2));
-    CudaSafeCall(cudaMalloc((void**) &g_max_idx_i,  2*sizeof(int)*dim1*dim2));
-    CudaSafeCall(cudaMalloc((void**) &g_nscore_o,   sizeof(float)*dim1*dim2));
-    CudaSafeCall(cudaMalloc((void**) &g_max_o,      2*sizeof(float)*dim1*dim2));
-    CudaSafeCall(cudaMalloc((void**) &g_max_idx_o,  2*sizeof(int)*dim1*dim2));    
-    CudaSafeCall(cudaMemcpy(dev_ker,      ker,      ker_len,       cudaMemcpyHostToDevice));
-    CudaSafeCall(cudaMemcpy(dev_res,      res,      res_len,       cudaMemcpyHostToDevice));
-    CudaSafeCall(cudaMemcpy(dev_area,     area,     area_len,      cudaMemcpyHostToDevice));
     
     // Take next step and compute score
     clean2dc<<<grid, blocksize>>>(dim1, dim2, argmax1, argmax2, stepr, \
@@ -161,13 +175,5 @@ float *clean_2d_c_GPU(float *res, float *ker, int64_t * area, \
     *nargmax2_p = max_idx_p[1];
     *maxr_p = max_p[0];
     *maxi_p = max_p[1];
-    cudaFree(dev_ker);
-    cudaFree(dev_res);
-    cudaFree(g_nscore_i);
-    cudaFree(g_max_i);
-    cudaFree(g_max_idx_i);
-    cudaFree(g_nscore_o);
-    cudaFree(g_max_o);
-    cudaFree(g_max_idx_o);
     return 0;
 }
